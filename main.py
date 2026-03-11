@@ -205,16 +205,42 @@ Corpo:
     response.raise_for_status()
 
     raw = response.json()["response"].strip()
+    parsed = try_parse_json(raw)
+    if parsed is not None:
+        return parsed
+
+    return {
+        "classificacao": "SUSPEITO",
+        "score": rule_score,
+        "motivos": ["Ollama não retornou JSON válido"],
+        "resumo": raw[:500]
+    }
+
+
+def try_parse_json(text):
+    if not text:
+        return None
+
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.I)
 
     try:
-        return json.loads(raw)
+        return json.loads(cleaned)
     except json.JSONDecodeError:
-        return {
-            "classificacao": "SUSPEITO",
-            "score": max(rule_score, 60),
-            "motivos": ["Ollama não retornou JSON válido"],
-            "resumo": raw[:500]
-        }
+        pass
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    snippet = cleaned[start:end + 1]
+    try:
+        return json.loads(snippet)
+    except json.JSONDecodeError:
+        return None
 
 
 def send_telegram_message(text):
